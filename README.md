@@ -5,14 +5,14 @@
 
 ### BACK
 
-cd backend 
-npm install express mssql dotenv cors
-node server.js
+- cd backend 
+- npm install express mssql dotenv cors
+- node server.js
 
 ### FRONT
-cd frontend/auditoria-db
-npm install
-npm run dev
+- cd frontend/auditoria-db
+- npm install
+- npm run dev
 
 
 
