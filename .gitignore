@@ -1,0 +1,16 @@
+# Node.js
+node_modules/
+
+# npm logs
+npm-debug.log
+yarn-error.log
+
+
+# Visual Studio Code
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
