@@ -6,7 +6,7 @@ const dbConfig = {
     password: process.env.DB_PASSWORD,
     server: process.env.DB_SERVER,
     database: process.env.DB_DATABASE,
-    options: { encrypt: false, trustServerCertificate: true, enableArithAbort: true, },
+    options: { encrypt: false, trustServerCertificate: true },
 };
 
 module.exports = async () => {

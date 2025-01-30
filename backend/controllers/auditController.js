@@ -1,8 +1,13 @@
 const sql = require('mssql');
 
+
+
+
 // 1. Identificación de relaciones que requieren integridad referencial
 const identifyMissingConstraints = async () => {
+  
   const query = `
+
     WITH PotentialFKs AS (
       SELECT 
         c1.TABLE_NAME as parent_table,
@@ -118,6 +123,7 @@ const auditDatabase = async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
+
     // Ejecutar todas las verificaciones
     const [missingConstraints, constraintAnomalies, dataAnomalies] = await Promise.all([
       identifyMissingConstraints(),
@@ -125,10 +131,10 @@ const auditDatabase = async (req, res) => {
       checkDataAnomalies()
     ]);
 
-     // Imprimir los resultados de cada consulta
-     console.log('Missing Constraints:', missingConstraints.recordset);
-     console.log('Constraint Anomalies:', constraintAnomalies.recordset);
-     console.log('Data Anomalies:', dataAnomalies.recordset);
+    // Imprimir los resultados de cada consulta para verificar
+    console.log('Missing Constraints:', missingConstraints.recordset);
+    console.log('Constraint Anomalies:', constraintAnomalies.recordset);
+    console.log('Data Anomalies:', dataAnomalies.recordset);
 
     // Almacenar resultados
     results.missingConstraints = missingConstraints.recordset;
@@ -155,6 +161,7 @@ const auditDatabase = async (req, res) => {
     });
   }
 };
+
 
 module.exports = { 
   auditDatabase,
