@@ -310,6 +310,18 @@ WHERE c.is_nullable = 1;
   return await safeQuery(query, databaseName);
 };
 
+// 9. FKs deshabilitadas
+const disabledFKs = async (databaseName) => {
+  const query = `
+    SELECT 
+    OBJECT_NAME(parent_object_id) AS TableName,
+    name AS ForeignKeyName
+FROM sys.foreign_keys
+WHERE is_disabled = 1;
+  `;
+  return await safeQuery(query, databaseName);
+};
+
 // Controlador principal que agrupa todas las verificaciones
 const auditDatabase = async (req, res) => {
   const { databaseName } = req.body;
@@ -328,6 +340,7 @@ const auditDatabase = async (req, res) => {
       dbccAnomalies: [],
       triggerAnomalies: [],
       nullableFKs:[],
+      nocheckFKs:[],
       timestamp: new Date().toISOString(),
       timestamp: new Date().toISOString(),
     };
@@ -342,6 +355,7 @@ const auditDatabase = async (req, res) => {
       dbccAnomalies,
       triggerAnomalies,
       nullableFKs,
+      nocheckFKs,
     ] = await Promise.all([
       identifyMissingConstraints(databaseName),
       checkConstraintAnomalies(databaseName),
@@ -351,6 +365,7 @@ const auditDatabase = async (req, res) => {
       checkDBCCAnomalies(databaseName),
       checkTriggerAnomalies(databaseName),
       nullFKs(databaseName),
+      disabledFKs(databaseName),
     ]);
 
     // Almacenar resultados
@@ -362,6 +377,7 @@ const auditDatabase = async (req, res) => {
     results.dbccAnomalies = dbccAnomalies || [];
     results.triggerAnomalies = triggerAnomalies || [];
     results.nullableFKs = nullableFKs || [];
+    results.nocheckFKs = nocheckFKs || [];
 
     // Generar log detallado
     const logEntry = {
@@ -375,7 +391,8 @@ const auditDatabase = async (req, res) => {
         ).length,
         total_dbcc_anomalies: results.dbccAnomalies.length,
         total_trigger_anomalies: results.triggerAnomalies.length,
-        total_null_fks: results.nullableFKs.length
+        total_null_fks: results.nullableFKs.length,
+        total_nockeck_fks: results.nocheckFKs.length
       },
       details: results
     };
