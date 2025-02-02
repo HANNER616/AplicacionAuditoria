@@ -81,8 +81,8 @@ const checkConstraintAnomalies = async (databaseName) => {
         ELSE 'SET DEFAULT'
       END as UpdateBehavior,
       CASE 
-        WHEN fk.is_disabled = 1 THEN 'Disabled'
-        ELSE 'Enabled'
+        WHEN fk.is_disabled = 1 THEN 'Deshabilitado'
+        ELSE 'Habilitado'
       END as Status,
       CASE
         WHEN fk.is_not_trusted = 1 THEN 'Not Trusted'
@@ -132,17 +132,16 @@ const checkDataAnomalies = async (databaseName) => {
 // 4. Capturar tablas aisladas y sus disparadores
 const checkIsolatedTablesAndTriggers = async (databaseName) => {
   const query = `
-    SELECT 
-      t.name AS TableName,
-      tr.name AS TriggerName,
-      tr.is_disabled AS TriggerDisabled
-    FROM sys.tables t
-    LEFT JOIN sys.triggers tr ON t.object_id = tr.parent_id
-    WHERE NOT EXISTS (
-      SELECT 1 
-      FROM sys.foreign_keys fk 
-      WHERE fk.parent_object_id = t.object_id
-    );
+      SELECT t.name AS TableName
+      FROM sys.tables t
+      LEFT JOIN sys.foreign_keys fk ON t.object_id = fk.referenced_object_id OR t.object_id = fk.parent_object_id
+      LEFT JOIN sys.triggers tr ON t.object_id = tr.parent_id
+      LEFT JOIN sys.sql_expression_dependencies dep ON t.object_id = dep.referenced_id
+      LEFT JOIN sys.procedures sp ON t.object_id = sp.object_id
+      WHERE fk.object_id IS NULL
+      AND tr.object_id IS NULL
+      AND dep.referencing_id IS NULL
+      AND sp.object_id IS NULL
   `;
   return await safeQuery(query, databaseName);
 };
@@ -270,7 +269,6 @@ ORDER BY Severity DESC;
 DROP TABLE #DBCCResults;
 
   `;
-
   return await safeQuery(query, databaseName);
 };
 
@@ -392,7 +390,7 @@ const auditDatabase = async (req, res) => {
         total_dbcc_anomalies: results.dbccAnomalies.length,
         total_trigger_anomalies: results.triggerAnomalies.length,
         total_null_fks: results.nullableFKs.length,
-        total_nockeck_fks: results.nocheckFKs.length
+        total_nockeck_fks: results.nocheckFKs.length,
       },
       details: results
     };

@@ -6,7 +6,7 @@ const baseConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   server: process.env.DB_SERVER,
-  connectionTimeout: 30000,
+  connectionTimeout: 120000,
   options: { encrypt: false, trustServerCertificate: true },
 };
 
