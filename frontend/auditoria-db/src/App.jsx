@@ -2,6 +2,46 @@ import React, { useEffect, useState } from 'react';
 import './App.css'; // Asegúrate de importar tu archivo CSS
 
 const AuditDashboard = () => {
+  const [dbccAnomalies, setDbccAnomalies] = useState([]);
+  
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Error':
+        return 'bg-red-500 text-white';
+      case 'Warning':
+        return 'bg-yellow-500 text-black';
+      case 'Success':
+        return 'bg-green-500 text-white';
+      default:
+        return 'bg-gray-500 text-white';
+    }
+  };
+  
+  const getSeverityColor = (severity) => {
+    switch (severity) {
+      case 'High':
+        return 'text-red-500';
+      case 'Medium':
+        return 'text-yellow-500';
+      case 'Low':
+        return 'text-green-500';
+      default:
+        return 'text-gray-500';
+    }
+  };
+  
+  const getAlertBadge = (alertType) => {
+    switch (alertType) {
+      case 'Critical':
+        return 'bg-red-500 text-white';
+      case 'Warning':
+        return 'bg-yellow-500 text-black';
+      case 'Info':
+        return 'bg-blue-500 text-white';
+      default:
+        return 'bg-gray-500 text-white';
+    }
+  };
   const [auditData, setAuditData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -216,7 +256,7 @@ const AuditDashboard = () => {
 
       {/* Estado de Normalización */}
       <div className="table-wrapper">
-        <h2 className="table-title">Estado de Normalización</h2>
+        <h2 className="table-title">Estado de Primera Normalización</h2>
         <div className="table-container">
           <table>
             <thead>
@@ -247,32 +287,54 @@ const AuditDashboard = () => {
         </div>
       </div>
 
-      {/* Anomalías con DBCC */}
-      <div className="table-wrapper">
-        <h2 className="table-title">Anomalías con DBCC</h2>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Mensaje de Error</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditData?.dbccAnomalies?.length > 0 ? (
-                auditData.dbccAnomalies.map((item, index) => (
-                  <tr key={index}>
-                    <td className="status-red">{item.Message}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="1" className="text-center">No hay datos disponibles</td>
+{/* Anomalías con DBCC */}
+<div className="table-wrapper p-4 bg-white shadow-md rounded-lg">
+      <h2 className="text-xl font-semibold mb-4 text-gray-800">Anomalías con DBCC</h2>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border border-gray-300 rounded-lg">
+          <thead>
+            <tr className="bg-gray-100 text-gray-700">
+              <th className="p-2 text-left">Tabla</th>
+              <th className="p-2 text-left">Constraint</th>
+              <th className="p-2 text-left">Tipo de Error</th>
+              <th className="p-2 text-left">Descripción</th>
+              <th className="p-2 text-left">Estado</th>
+              <th className="p-2 text-left">Severidad</th>
+              <th className="p-2 text-left">Alerta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditData?.dbccAnomalies && auditData.dbccAnomalies.length > 0 ? (
+              auditData.dbccAnomalies.map((item, index) => (
+                <tr key={index} className="border-b hover:bg-gray-50">
+                  <td className="p-2">{item.TableName}</td>
+                  <td className="p-2">{item.ConstraintName}</td>
+                  <td className="p-2">{item.ErrorType}</td>
+                  <td className="p-2">{item.ErrorDescription}</td>
+                  <td className="p-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(item.Status)}`}>
+                      {item.Status}
+                    </span>
+                  </td>
+                  <td className={`p-2 ${getSeverityColor(item.Severity)}`}>{item.Severity}</td>
+                  <td className="p-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getAlertBadge(item.AlertType)}`}>
+                      {item.AlertType}
+                    </span>
+                  </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="7" className="text-center p-4 text-gray-500">
+                  No se encontraron anomalías DBCC
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
+    </div>
 
       {/* Anomalías en Disparadores */}
       <div className="table-wrapper">
