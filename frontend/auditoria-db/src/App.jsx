@@ -267,11 +267,7 @@ const AuditDashboard = () => {
 
       {/* Estado de Normalización */}
       <div className="table-wrapper">
-<<<<<<< HEAD
         <h2 className="table-title">Estado de 1era Normalización</h2>
-=======
-        <h2 className="table-title">Estado de Primera Normalización</h2>
->>>>>>> 214eeb387769f1be7a373bfad44f99305a9865da
         <div className="table-container">
           <table>
             <thead>
