@@ -17,6 +17,7 @@ const safeQuery = async (query, databaseName) => {
   }
 };
 
+
 // 1. Identificación de relaciones que requieren integridad referencial
 const identifyMissingConstraints = async (databaseName) => {
   const query = `
@@ -290,6 +291,25 @@ const checkTriggerAnomalies = async (databaseName) => {
   return await safeQuery(query, databaseName);
 };
 
+
+// 8. NULL values in FKs
+const nullFKs = async (databaseName) => {
+  const query = `
+    SELECT 
+    fk.name AS FK_Name,
+    OBJECT_NAME(fk.parent_object_id) AS TableName,
+    c.name AS ColumnName
+FROM sys.foreign_keys fk
+INNER JOIN sys.foreign_key_columns fkc 
+    ON fk.object_id = fkc.constraint_object_id
+INNER JOIN sys.columns c 
+    ON fkc.parent_object_id = c.object_id 
+    AND fkc.parent_column_id = c.column_id
+WHERE c.is_nullable = 1;
+  `;
+  return await safeQuery(query, databaseName);
+};
+
 // Controlador principal que agrupa todas las verificaciones
 const auditDatabase = async (req, res) => {
   const { databaseName } = req.body;
@@ -307,6 +327,8 @@ const auditDatabase = async (req, res) => {
       normalizationStatus: [],
       dbccAnomalies: [],
       triggerAnomalies: [],
+      nullableFKs:[],
+      timestamp: new Date().toISOString(),
       timestamp: new Date().toISOString(),
     };
 
@@ -319,6 +341,7 @@ const auditDatabase = async (req, res) => {
       normalizationStatus,
       dbccAnomalies,
       triggerAnomalies,
+      nullableFKs,
     ] = await Promise.all([
       identifyMissingConstraints(databaseName),
       checkConstraintAnomalies(databaseName),
@@ -327,6 +350,7 @@ const auditDatabase = async (req, res) => {
       checkNormalization(databaseName),
       checkDBCCAnomalies(databaseName),
       checkTriggerAnomalies(databaseName),
+      nullFKs(databaseName),
     ]);
 
     // Almacenar resultados
@@ -337,6 +361,7 @@ const auditDatabase = async (req, res) => {
     results.normalizationStatus = normalizationStatus || [];
     results.dbccAnomalies = dbccAnomalies || [];
     results.triggerAnomalies = triggerAnomalies || [];
+    results.nullableFKs = nullableFKs || [];
 
     // Generar log detallado
     const logEntry = {
@@ -349,7 +374,8 @@ const auditDatabase = async (req, res) => {
           item => item.NormalizationStatus === 'Needs Normalization'
         ).length,
         total_dbcc_anomalies: results.dbccAnomalies.length,
-        total_trigger_anomalies: results.triggerAnomalies.length
+        total_trigger_anomalies: results.triggerAnomalies.length,
+        total_null_fks: results.nullableFKs.length
       },
       details: results
     };
