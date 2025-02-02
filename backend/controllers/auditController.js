@@ -1,13 +1,30 @@
-const sql = require('mssql');
+const { connectToDatabase } = require('../config/dbConfig');
 
 
 
+// Función para ejecutar consultas de manera segura
+const safeQuery = async (query, databaseName) => {
+  let pool;
+  try {
+    // Conectar a la base de datos especificada
+    pool = await connectToDatabase(databaseName);
+    const result = await pool.request().query(query);
+    return result.recordset || []; // Devuelve un arreglo vacío si no hay resultados
+  } catch (error) {
+    console.error("Error executing query:", error);
+    return []; // Devuelve un arreglo vacío en caso de error
+  } finally {
+    if (pool) {
+      await pool.close(); // Cierra la conexión solo si se estableció correctamente
+    }
+  }
+};
+
+// Resto del código de las funciones de auditoría...
 
 // 1. Identificación de relaciones que requieren integridad referencial
-const identifyMissingConstraints = async () => {
-  
+const identifyMissingConstraints = async (databaseName) => {
   const query = `
-
     WITH PotentialFKs AS (
       SELECT 
         c1.TABLE_NAME as parent_table,
@@ -46,11 +63,11 @@ const identifyMissingConstraints = async () => {
       AND p.referenced_table = e.referenced_table
     WHERE e.parent_table IS NULL;
   `;
-  return await sql.query(query);
+  return await safeQuery(query, databaseName);
 };
 
 // 2. Chequeo de anomalías en la definición de integridad referencial
-const checkConstraintAnomalies = async () => {
+const checkConstraintAnomalies = async (databaseName) => {
   const query = `
     SELECT 
       OBJECT_NAME(fk.parent_object_id) as TableName,
@@ -73,12 +90,11 @@ const checkConstraintAnomalies = async () => {
       END as Status
     FROM sys.foreign_keys fk;
   `;
-  
-  return await sql.query(query);
+  return await safeQuery(query, databaseName);
 };
 
 // 3. Chequeo de anomalías en los datos
-const checkDataAnomalies = async () => {
+const checkDataAnomalies = async (databaseName) => {
   const query = `
     WITH FKInfo AS (
       SELECT 
@@ -110,43 +126,129 @@ const checkDataAnomalies = async () => {
       ) as untrusted_constraints
     FROM FKInfo;
   `;
-  return await sql.query(query);
+  return await safeQuery(query, databaseName);
+};
+
+// 4. Capturar tablas aisladas y sus disparadores
+const checkIsolatedTablesAndTriggers = async (databaseName) => {
+  const query = `
+    SELECT 
+      t.name AS TableName,
+      tr.name AS TriggerName,
+      tr.is_disabled AS TriggerDisabled
+    FROM sys.tables t
+    LEFT JOIN sys.triggers tr ON t.object_id = tr.parent_id
+    WHERE NOT EXISTS (
+      SELECT 1 
+      FROM sys.foreign_keys fk 
+      WHERE fk.parent_object_id = t.object_id
+    );
+  `;
+  return await safeQuery(query, databaseName);
+};
+
+// 5. Aplicaciones de normalización
+const checkNormalization = async (databaseName) => {
+  const query = `
+    SELECT 
+      t.name AS TableName,
+      COUNT(c.column_id) AS ColumnCount,
+      CASE 
+        WHEN COUNT(c.column_id) > 10 THEN 'Needs Normalization'
+        ELSE 'Normalized'
+      END AS NormalizationStatus
+    FROM sys.tables t
+    JOIN sys.columns c ON t.object_id = c.object_id
+    GROUP BY t.name;
+  `;
+  return await safeQuery(query, databaseName);
+};
+
+// 6. Anomalías con DBCC
+const checkDBCCAnomalies = async (databaseName) => {
+  const query = `
+    DBCC CHECKDB WITH NO_INFOMSGS, ALL_ERRORMSGS;
+  `;
+  return await safeQuery(query, databaseName);
+};
+
+// 7. Verificar disparadores y anomalías en relaciones
+const checkTriggerAnomalies = async (databaseName) => {
+  const query = `
+    SELECT 
+      t.name AS TableName,
+      tr.name AS TriggerName,
+      tr.is_disabled AS TriggerDisabled,
+      CASE 
+        WHEN tr.is_disabled = 1 THEN 'Trigger Disabled'
+        ELSE 'Trigger Enabled'
+      END AS TriggerStatus
+    FROM sys.triggers tr
+    JOIN sys.tables t ON tr.parent_id = t.object_id;
+  `;
+  return await safeQuery(query, databaseName);
 };
 
 // Controlador principal que agrupa todas las verificaciones
 const auditDatabase = async (req, res) => {
+  const { databaseName } = req.body; // Obtén el nombre de la base de datos desde el frontend
+
+  if (!databaseName) {
+    return res.status(400).json({ error: 'El nombre de la base de datos es requerido' });
+  }
+
   try {
     const results = {
       missingConstraints: [],
       constraintAnomalies: [],
       dataAnomalies: [],
-      timestamp: new Date().toISOString()
+      isolatedTables: [],
+      normalizationStatus: [],
+      dbccAnomalies: [],
+      triggerAnomalies: [],
+      timestamp: new Date().toISOString(),
     };
 
-
     // Ejecutar todas las verificaciones
-    const [missingConstraints, constraintAnomalies, dataAnomalies] = await Promise.all([
-      identifyMissingConstraints(),
-      checkConstraintAnomalies(),
-      checkDataAnomalies()
+    const [
+      missingConstraints,
+      constraintAnomalies,
+      dataAnomalies,
+      isolatedTables,
+      normalizationStatus,
+      dbccAnomalies,
+      triggerAnomalies,
+    ] = await Promise.all([
+      identifyMissingConstraints(databaseName),
+      checkConstraintAnomalies(databaseName),
+      checkDataAnomalies(databaseName),
+      checkIsolatedTablesAndTriggers(databaseName),
+      checkNormalization(databaseName),
+      checkDBCCAnomalies(databaseName),
+      checkTriggerAnomalies(databaseName),
     ]);
 
-    // Imprimir los resultados de cada consulta para verificar
-    console.log('Missing Constraints:', missingConstraints.recordset);
-    console.log('Constraint Anomalies:', constraintAnomalies.recordset);
-    console.log('Data Anomalies:', dataAnomalies.recordset);
-
     // Almacenar resultados
-    results.missingConstraints = missingConstraints.recordset;
-    results.constraintAnomalies = constraintAnomalies.recordset;
-    results.dataAnomalies = dataAnomalies.recordset;
+    results.missingConstraints = missingConstraints || [];
+    results.constraintAnomalies = constraintAnomalies || [];
+    results.dataAnomalies = dataAnomalies || [];
+    results.isolatedTables = isolatedTables || [];
+    results.normalizationStatus = normalizationStatus || [];
+    results.dbccAnomalies = dbccAnomalies || [];
+    results.triggerAnomalies = triggerAnomalies || [];
 
     // Generar log personalizado
     const logEntry = {
       timestamp: results.timestamp,
       total_missing_constraints: results.missingConstraints.length,
       total_anomalies: results.constraintAnomalies.length + results.dataAnomalies.length,
-      details: results
+      total_isolated_tables: results.isolatedTables.length,
+      total_normalization_issues: results.normalizationStatus.filter(
+        (item) => item.NormalizationStatus === 'Needs Normalization'
+      ).length,
+      total_dbcc_anomalies: results.dbccAnomalies.length,
+      total_trigger_anomalies: results.triggerAnomalies.length,
+      details: results,
     };
 
     // Aquí podrías guardar el log en un archivo o en la base de datos
@@ -154,18 +256,14 @@ const auditDatabase = async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error("Error during database audit:", error);
-    res.status(500).json({ 
+    console.error('Error during database audit:', error);
+    res.status(500).json({
       error: 'Error durante la auditoría de la base de datos',
-      details: error.message 
+      details: error.message,
     });
   }
 };
 
-
 module.exports = { 
   auditDatabase,
-  identifyMissingConstraints,
-  checkConstraintAnomalies,
-  checkDataAnomalies
 };
