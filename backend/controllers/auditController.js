@@ -1,26 +1,21 @@
 const { connectToDatabase } = require('../config/dbConfig');
 
-
-
 // Función para ejecutar consultas de manera segura
 const safeQuery = async (query, databaseName) => {
   let pool;
   try {
-    // Conectar a la base de datos especificada
     pool = await connectToDatabase(databaseName);
     const result = await pool.request().query(query);
-    return result.recordset || []; // Devuelve un arreglo vacío si no hay resultados
+    return result.recordset || [];
   } catch (error) {
     console.error("Error executing query:", error);
-    return []; // Devuelve un arreglo vacío en caso de error
+    return [];
   } finally {
     if (pool) {
-      await pool.close(); // Cierra la conexión solo si se estableció correctamente
+      await pool.close();
     }
   }
 };
-
-// Resto del código de las funciones de auditoría...
 
 // 1. Identificación de relaciones que requieren integridad referencial
 const identifyMissingConstraints = async (databaseName) => {
@@ -87,7 +82,11 @@ const checkConstraintAnomalies = async (databaseName) => {
       CASE 
         WHEN fk.is_disabled = 1 THEN 'Disabled'
         ELSE 'Enabled'
-      END as Status
+      END as Status,
+      CASE
+        WHEN fk.is_not_trusted = 1 THEN 'Not Trusted'
+        ELSE 'Trusted'
+      END as TrustStatus
     FROM sys.foreign_keys fk;
   `;
   return await safeQuery(query, databaseName);
@@ -164,11 +163,113 @@ const checkNormalization = async (databaseName) => {
   return await safeQuery(query, databaseName);
 };
 
-// 6. Anomalías con DBCC
+// 6. Anomalías con DBCC y Constraints
 const checkDBCCAnomalies = async (databaseName) => {
   const query = `
-    DBCC CHECKDB WITH NO_INFOMSGS, ALL_ERRORMSGS;
+    -- Tabla temporal para almacenar resultados
+CREATE TABLE #DBCCResults
+(
+    ID INT IDENTITY(1,1),
+    TableName NVARCHAR(128),
+    ConstraintName NVARCHAR(128),
+    ErrorType NVARCHAR(50),
+    ErrorDescription NVARCHAR(MAX),
+    Status NVARCHAR(20),
+    Severity INT
+);
+
+-- 1. Verificar constraints no confiables (not trusted)
+INSERT INTO #DBCCResults (TableName, ConstraintName, ErrorType, ErrorDescription, Status, Severity)
+SELECT 
+    OBJECT_NAME(parent_object_id) AS TableName,
+    name AS ConstraintName,
+    'Not Trusted Constraint' AS ErrorType,
+    'Constraint no confiable - Puede contener violaciones no detectadas' AS ErrorDescription,
+    'Not Trusted' AS Status,
+    2 AS Severity
+FROM sys.foreign_keys
+WHERE is_not_trusted = 1;
+
+-- 2. Verificar constraints deshabilitados
+INSERT INTO #DBCCResults (TableName, ConstraintName, ErrorType, ErrorDescription, Status, Severity)
+SELECT 
+    OBJECT_NAME(parent_object_id) AS TableName,
+    name AS ConstraintName,
+    'Disabled Constraint' AS ErrorType,
+    'Constraint deshabilitado - No se está aplicando' AS ErrorDescription,
+    'Disabled' AS Status,
+    3 AS Severity
+FROM sys.foreign_keys
+WHERE is_disabled = 1;
+
+-- 3. Verificar violaciones de FK existentes
+INSERT INTO #DBCCResults (TableName, ConstraintName, ErrorType, ErrorDescription, Status, Severity)
+SELECT 
+    OBJECT_NAME(fkc.parent_object_id) AS TableName,
+    fk.name AS ConstraintName,
+    'FK Violation' AS ErrorType,
+    'Se encontraron violaciones de FK' AS ErrorDescription,
+    'Violation' AS Status,
+    1 AS Severity
+FROM sys.foreign_key_columns fkc
+JOIN sys.foreign_keys fk ON fkc.constraint_object_id = fk.object_id
+LEFT JOIN sys.tables parent ON fkc.referenced_object_id = parent.object_id
+LEFT JOIN sys.tables child ON fkc.parent_object_id = child.object_id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys fk2
+    WHERE fk2.object_id = fk.object_id
+    AND fk2.is_not_trusted = 0
+    AND fk2.is_disabled = 0
+);
+
+-- 4. Verificar integridad general de la base de datos
+DECLARE @DBName NVARCHAR(128) = DB_NAME();
+DECLARE @SQL NVARCHAR(MAX);
+
+SET @SQL = 'DBCC CHECKDB ([' + @DBName + ']) WITH TABLERESULTS, NO_INFOMSGS;';
+
+DECLARE @DBCCResults TABLE (
+    ErrorNumber INT,
+    ErrorMessage NVARCHAR(MAX)
+);
+
+INSERT INTO @DBCCResults
+EXEC sp_executesql @SQL;
+
+INSERT INTO #DBCCResults (TableName, ConstraintName, ErrorType, ErrorDescription, Status, Severity)
+SELECT 
+    'Database Level' AS TableName,
+    'DBCC CHECKDB' AS ConstraintName,
+    'Database Integrity' AS ErrorType,
+    ErrorMessage AS ErrorDescription,
+    'Error' AS Status,
+    ErrorNumber AS Severity
+FROM @DBCCResults
+WHERE ErrorNumber > 0;
+
+-- Retornar todos los resultados ordenados por severidad
+SELECT 
+    TableName,
+    ConstraintName,
+    ErrorType,
+    ErrorDescription,
+    Status,
+    Severity,
+    CASE 
+        WHEN Status = 'Not Trusted' THEN 'warning'
+        WHEN Status = 'Disabled' THEN 'error'
+        WHEN Status = 'Violation' THEN 'error'
+        ELSE 'info'
+    END as AlertType
+FROM #DBCCResults
+ORDER BY Severity DESC;
+
+-- Limpiar tabla temporal
+DROP TABLE #DBCCResults;
+
   `;
+
   return await safeQuery(query, databaseName);
 };
 
@@ -191,7 +292,7 @@ const checkTriggerAnomalies = async (databaseName) => {
 
 // Controlador principal que agrupa todas las verificaciones
 const auditDatabase = async (req, res) => {
-  const { databaseName } = req.body; // Obtén el nombre de la base de datos desde el frontend
+  const { databaseName } = req.body;
 
   if (!databaseName) {
     return res.status(400).json({ error: 'El nombre de la base de datos es requerido' });
@@ -237,33 +338,33 @@ const auditDatabase = async (req, res) => {
     results.dbccAnomalies = dbccAnomalies || [];
     results.triggerAnomalies = triggerAnomalies || [];
 
-    // Generar log personalizado
+    // Generar log detallado
     const logEntry = {
       timestamp: results.timestamp,
-      total_missing_constraints: results.missingConstraints.length,
-      total_anomalies: results.constraintAnomalies.length + results.dataAnomalies.length,
-      total_isolated_tables: results.isolatedTables.length,
-      total_normalization_issues: results.normalizationStatus.filter(
-        (item) => item.NormalizationStatus === 'Needs Normalization'
-      ).length,
-      total_dbcc_anomalies: results.dbccAnomalies.length,
-      total_trigger_anomalies: results.triggerAnomalies.length,
-      details: results,
+      summary: {
+        total_missing_constraints: results.missingConstraints.length,
+        total_anomalies: results.constraintAnomalies.length + results.dataAnomalies.length,
+        total_isolated_tables: results.isolatedTables.length,
+        total_normalization_issues: results.normalizationStatus.filter(
+          item => item.NormalizationStatus === 'Needs Normalization'
+        ).length,
+        total_dbcc_anomalies: results.dbccAnomalies.length,
+        total_trigger_anomalies: results.triggerAnomalies.length
+      },
+      details: results
     };
 
-    // Aquí podrías guardar el log en un archivo o en la base de datos
     console.log('Audit Log:', JSON.stringify(logEntry, null, 2));
-
     res.json(results);
   } catch (error) {
     console.error('Error during database audit:', error);
     res.status(500).json({
       error: 'Error durante la auditoría de la base de datos',
-      details: error.message,
+      details: error.message
     });
   }
 };
 
-module.exports = { 
+module.exports = {
   auditDatabase,
 };
