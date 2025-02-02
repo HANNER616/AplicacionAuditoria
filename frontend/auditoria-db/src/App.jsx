@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import useExportData from './ExportData';
 import './App.css'; // Asegúrate de importar tu archivo CSS
 
 const AuditDashboard = () => {
@@ -6,6 +7,7 @@ const AuditDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [databaseName, setDatabaseName] = useState('');
+  const {handleExport, exporting } = useExportData(auditData, databaseName);
 
   const handleAudit = async () => {
     if (!databaseName) {
@@ -37,8 +39,9 @@ const AuditDashboard = () => {
       setLoading(false);
     }
   };
-
+  
   useEffect(() => {
+    
     if (auditData) {
       console.log("Datos de auditoría:", auditData);
     }
@@ -69,12 +72,19 @@ const AuditDashboard = () => {
           onChange={(e) => setDatabaseName(e.target.value)}
           className="p-2 border border-gray-300 rounded-md text-black"
           placeholder="Ingresa el nombre de la base de datos"
-        />
+        />  
         <button
           onClick={handleAudit}
           className="ml-4 p-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
         >
           Analizar
+        </button>
+        <button
+          onClick={handleExport}
+          disabled={exporting || !auditData}
+          className="ml-4 p-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-400"
+        >
+          {exporting ? 'Exportando...' : 'Exportar'}
         </button>
       </div>
 
@@ -162,21 +172,22 @@ const AuditDashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {auditData?.dataAnomalies?.length > 0 ? (
-                auditData.dataAnomalies.map((item, index) => (
-                  <tr key={index}>
-                    <td>{item.parent_table}</td>
-                    <td>{item.referenced_table}</td>
-                    <td className="status-red">{item.disabled_constraints}</td>
-                    <td className="status-orange">{item.untrusted_constraints}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="4" className="text-center">No hay datos disponibles</td>
+            {auditData?.dataAnomalies?.length > 0 ? (
+              auditData.dataAnomalies.map((item, index) => (
+                <tr key={index}>
+                  <td>{item.parent_table}</td>
+                  <td>{item.referenced_table}</td>
+                  <td className="status-red">{item?.disabled_constraints || "N/A"}</td>
+                  <td className="status-orange">{item?.untrusted_constraints || "N/A"}</td>
                 </tr>
-              )}
-            </tbody>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="4" className="text-center">No hay datos disponibles</td>
+              </tr>
+            )}
+          </tbody>
+
           </table>
         </div>
       </div>
@@ -216,7 +227,7 @@ const AuditDashboard = () => {
 
       {/* Estado de Normalización */}
       <div className="table-wrapper">
-        <h2 className="table-title">Estado de Normalización</h2>
+        <h2 className="table-title">Estado de 1era Normalización</h2>
         <div className="table-container">
           <table>
             <thead>

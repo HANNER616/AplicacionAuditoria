@@ -12,6 +12,7 @@
 ### FRONT
 - cd frontend/auditoria-db
 - npm install
+- npm install xlsx file-saver
 - npm run dev
 
 
