@@ -70,7 +70,13 @@ const useExportData = (auditData, databaseName) => {
     if (data?.dbccAnomalies?.length > 0) {
       sheets['Anomalías DBCC'] = XLSX.utils.json_to_sheet(
         data.dbccAnomalies.map(item => ({
-          'Mensaje de Error': item.Message
+          'Tabla': item.TableName,
+          'Constraint':item.ConstraintName,
+          'Tipo de Error':item.ErrorType,
+          'Descripción':item.ErrorDescription,
+          'Estado':item.Status,
+          'Severidad':item.Severity,
+          'Alerta':item.AlertType,
         }))
       );
     }
