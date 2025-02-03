@@ -127,7 +127,67 @@ const AuditDashboard = () => {
           {exporting ? 'Exportando...' : 'Exportar'}
         </button>
       </div>
+      {/*NULL Fk's*/}
+<div className="table-wrapper">
+        <h2 className="table-title">FK's con valores NULL</h2>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre FK</th>
+                <th>Tabla</th>
+                <th>Columna</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditData?.nullableFKs?.length > 0 ? (
+                auditData.nullableFKs.map((item, index) => (
+                  <tr key={index}>
+                    <td>{item.FK_Name}</td>
+                    <td>{item.TableName}</td>
+                    <td>{item.ColumnName}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4" className="text-center">No hay datos disponibles</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
+      {/*FK's deshabilitados*/}
+      <div className="table-wrapper">
+        <h2 className="table-title">FK's deshabilitados</h2>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Tabla</th>
+                <th>Nombre FK</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditData?.nocheckFKs?.length > 0 ? (
+                auditData.nocheckFKs.map((item, index) => (
+                  <tr key={index}>
+                    <td>{item.TableName}</td>
+                    <td>{item.ForeignKeyName}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4" className="text-center">No hay datos disponibles</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      
       {/* Restricciones Faltantes */}
       <div className="table-wrapper">
         <h2 className="table-title">Relaciones sin Integridad Referencial</h2>
